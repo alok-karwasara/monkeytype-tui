@@ -1,0 +1,45 @@
+[package]
+name = "monkeytype-tui"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+description = "Offline terminal typing practice for words and code"
+default-run = "monkeytype-tui"
+publish = false
+
+[features]
+default = []
+test-support = []
+
+[dependencies]
+ratatui = { version = "0.30.2", default-features = false, features = ["crossterm"] }
+crossterm = "0.29"
+signal-hook = { version = "0.4.4", default-features = false }
+
+[dev-dependencies]
+serde_json = "1.0.154"
+portable-pty = "0.9"
+vt100 = "0.16.2"
+
+[[bin]]
+name = "fixture-app"
+path = "tests/support/fixture_app.rs"
+required-features = ["test-support"]
+test = false
+
+[[test]]
+name = "pty"
+path = "tests/pty.rs"
+harness = false
+required-features = ["test-support"]
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+
+[profile.release]
+lto = "thin"
+strip = true

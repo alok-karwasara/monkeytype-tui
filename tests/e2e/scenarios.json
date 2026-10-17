@@ -1,0 +1,508 @@
+{
+  "schema_version": 1,
+  "status": "scenario-specifications-with-implemented-runner",
+  "design_reference": "system-design.md section 10; test-cases.md section 10",
+  "platforms": [
+    "linux",
+    "macos"
+  ],
+  "fixture_selection": "Separate feature-gated fixture-app binary with named bundled fixtures; no production clock bypass.",
+  "launch_policy": "Own PTY and child process only; no user-shell keystrokes or environment/secret inspection.",
+  "scenarios": [
+    {
+      "case_id": "E2E01",
+      "status": "implemented",
+      "priority": "P0",
+      "contract": "confirmed",
+      "steps": [
+        {
+          "action": "launch_pty"
+        },
+        {
+          "action": "await_screen",
+          "screen": "ready"
+        },
+        {
+          "action": "send_key",
+          "key": "Ctrl+C"
+        },
+        {
+          "action": "await_exit"
+        }
+      ],
+      "assertions": [
+        "Exit successful.",
+        "Raw/echo settings match the baseline.",
+        "Alternate-screen/cursor state restored."
+      ],
+      "verification": "passed-on-linux"
+    },
+    {
+      "case_id": "E2E02",
+      "status": "implemented",
+      "priority": "P0",
+      "contract": "confirmed",
+      "steps": [
+        {
+          "action": "launch_pty"
+        },
+        {
+          "action": "select_settings_from_ready"
+        },
+        {
+          "action": "apply_settings"
+        },
+        {
+          "action": "assert_ready_configuration"
+        }
+      ],
+      "assertions": [
+        "Requested mode and duration displayed.",
+        "Timer has not started."
+      ],
+      "parameters": {
+        "mode": [
+          "words",
+          "code"
+        ],
+        "duration_seconds": [
+          30,
+          60,
+          120
+        ]
+      },
+      "verification": "passed-on-linux"
+    },
+    {
+      "case_id": "E2E03",
+      "status": "implemented",
+      "priority": "P0",
+      "contract": "mixed-confirmed-and-proposed",
+      "steps": [
+        {
+          "action": "launch_with_fixture",
+          "source": "a;\n    b c;"
+        },
+        {
+          "action": "choose_settings",
+          "mode": "code",
+          "duration_seconds": 30
+        },
+        {
+          "action": "send_text_as_keystrokes",
+          "text": "a;b c;"
+        },
+        {
+          "action": "await_screen",
+          "screen": "results"
+        }
+      ],
+      "assertions": [
+        "No indentation, trailing spaces, or Enter required.",
+        "All internal spaces and punctuation counted.",
+        "Accuracy 100%; errors 0.",
+        "Reason snippet_exhausted; elapsed below 30 seconds."
+      ],
+      "verification": "passed-on-linux"
+    },
+    {
+      "case_id": "E2E04",
+      "status": "implemented",
+      "priority": "P0",
+      "contract": "proposed-correction-contract",
+      "steps": [
+        {
+          "action": "launch_with_fixture",
+          "source": "abc"
+        },
+        {
+          "action": "send_text_as_keystrokes",
+          "text": "ax"
+        },
+        {
+          "action": "await_error_mark"
+        },
+        {
+          "action": "send_key",
+          "key": "Backspace"
+        },
+        {
+          "action": "send_text_as_keystrokes",
+          "text": "bc"
+        },
+        {
+          "action": "await_screen",
+          "screen": "results"
+        }
+      ],
+      "assertions": [
+        "Second-position error underline appears before correction.",
+        "Final prefix abc; uncorrected 0.",
+        "Attempts 4; historical correct attempts 3; errors 1; accuracy 75%."
+      ],
+      "verification": "passed-on-linux"
+    },
+    {
+      "case_id": "E2E05",
+      "status": "implemented",
+      "priority": "P0",
+      "contract": "proposed-positional-scoring",
+      "steps": [
+        {
+          "action": "launch_with_fixture",
+          "source": "a b;"
+        },
+        {
+          "action": "send_text_as_keystrokes",
+          "text": "ab"
+        },
+        {
+          "action": "await_error_mark"
+        }
+      ],
+      "assertions": [
+        "Required internal space not silently skipped.",
+        "Second character mismatches expected space.",
+        "Still running; prefix ab and at least one visible error."
+      ],
+      "verification": "passed-on-linux"
+    },
+    {
+      "case_id": "E2E06",
+      "status": "implemented",
+      "priority": "P0",
+      "contract": "confirmed-timed-mode",
+      "steps": [
+        {
+          "action": "launch_with_fixture",
+          "source": "abcd"
+        },
+        {
+          "action": "choose_settings",
+          "mode": "code",
+          "duration_seconds": 30
+        },
+        {
+          "action": "send_text_as_keystrokes",
+          "text": "a"
+        },
+        {
+          "action": "await_screen",
+          "screen": "results",
+          "timeout_seconds": 45
+        },
+        {
+          "action": "capture_report"
+        },
+        {
+          "action": "send_text_as_keystrokes",
+          "text": "bc"
+        },
+        {
+          "action": "assert_report_unchanged"
+        }
+      ],
+      "assertions": [
+        "Real monotonic time used, no clock bypass.",
+        "Timeout is not early beyond a documented PTY-observation tolerance.",
+        "Frozen elapsed 30 seconds; finish reason timeout.",
+        "Attempts remain 1 after post-finish text."
+      ],
+      "verification": "passed-on-linux"
+    },
+    {
+      "case_id": "E2E07",
+      "status": "implemented",
+      "priority": "P0",
+      "contract": "proposed-small-window-policy",
+      "steps": [
+        {
+          "action": "launch_with_fixture",
+          "source": "abcd",
+          "columns": 100,
+          "rows": 30
+        },
+        {
+          "action": "send_text_as_keystrokes",
+          "text": "a"
+        },
+        {
+          "action": "resize_pty",
+          "columns": 30,
+          "rows": 10
+        },
+        {
+          "action": "send_text_as_keystrokes",
+          "text": "x"
+        },
+        {
+          "action": "resize_pty",
+          "columns": 100,
+          "rows": 30
+        },
+        {
+          "action": "await_active_prompt"
+        }
+      ],
+      "assertions": [
+        "No crash or invalid cursor coordinates.",
+        "Tiny-window x ignored without adding attempts.",
+        "Prefix a preserved; timer not paused."
+      ],
+      "verification": "passed-on-linux"
+    },
+    {
+      "case_id": "E2E08",
+      "status": "implemented",
+      "priority": "P0",
+      "contract": "proposed-reported-paste-policy",
+      "steps": [
+        {
+          "action": "launch_with_fixture",
+          "source": "abcd"
+        },
+        {
+          "action": "send_bracketed_paste",
+          "text": "abcd"
+        },
+        {
+          "action": "assert_ready"
+        },
+        {
+          "action": "send_text_as_keystrokes",
+          "text": "a"
+        },
+        {
+          "action": "send_bracketed_paste",
+          "text": "bcd"
+        },
+        {
+          "action": "assert_running"
+        }
+      ],
+      "assertions": [
+        "Ready paste does not start timer.",
+        "Active paste does not complete snippet.",
+        "Only manually sent a is counted."
+      ],
+      "requires": [
+        "Terminal parser supports reported bracketed paste."
+      ],
+      "verification": "passed-on-linux"
+    },
+    {
+      "case_id": "E2E09",
+      "status": "implemented",
+      "priority": "P0",
+      "contract": "proposed-shortcuts-and-abandon",
+      "steps": [
+        {
+          "action": "launch_with_fixture",
+          "source": "abcd"
+        },
+        {
+          "action": "send_text_as_keystrokes",
+          "text": "a"
+        },
+        {
+          "action": "send_key",
+          "key": "Esc"
+        },
+        {
+          "action": "await_screen",
+          "screen": "abandon_prompt"
+        },
+        {
+          "action": "cancel_abandon"
+        },
+        {
+          "action": "await_active_prompt"
+        },
+        {
+          "action": "send_key",
+          "key": "Esc"
+        },
+        {
+          "action": "confirm_abandon"
+        },
+        {
+          "action": "await_screen",
+          "screen": "ready"
+        }
+      ],
+      "assertions": [
+        "Cancel preserves prefix, attempts, and start time.",
+        "Confirm yields a fresh unstarted test.",
+        "Abandoned test is not a completion result."
+      ],
+      "verification": "passed-on-linux"
+    },
+    {
+      "case_id": "E2E10",
+      "status": "implemented",
+      "priority": "P0",
+      "contract": "proposed-restart-contract",
+      "steps": [
+        {
+          "action": "launch_with_fixture",
+          "source": "ab"
+        },
+        {
+          "action": "choose_settings",
+          "mode": "code",
+          "duration_seconds": 120
+        },
+        {
+          "action": "send_text_as_keystrokes",
+          "text": "ab"
+        },
+        {
+          "action": "await_screen",
+          "screen": "results"
+        },
+        {
+          "action": "send_key",
+          "key": "Enter"
+        },
+        {
+          "action": "await_screen",
+          "screen": "ready"
+        }
+      ],
+      "assertions": [
+        "Same code mode and 120-second duration.",
+        "Cursor/counters reset; timer unstarted."
+      ],
+      "verification": "passed-on-linux"
+    },
+    {
+      "case_id": "E2E11",
+      "status": "implemented",
+      "priority": "P0",
+      "contract": "mixed-cleanup-contracts",
+      "steps": [
+        {
+          "action": "launch_fresh_subject_for_variant"
+        },
+        {
+          "action": "trigger_variant"
+        },
+        {
+          "action": "await_exit"
+        },
+        {
+          "action": "inspect_owned_pty_state"
+        }
+      ],
+      "assertions": [
+        "Cleanup attempted/restored for owned terminal features.",
+        "Original failure remains diagnosable outside raw mode.",
+        "No second panic from cleanup."
+      ],
+      "parameters": {
+        "variant": [
+          "normal_quit",
+          "sigterm",
+          "read_error",
+          "draw_error",
+          "partial_initialization_failure",
+          "unwinding_panic"
+        ]
+      },
+      "notes": [
+        "Fault-injection cases may use a dev-only lifecycle integration executable, explicitly reported separately from production-binary UI E2E tests.",
+        "Graceful SIGTERM shutdown is implemented; no restoration assertion for SIGKILL."
+      ],
+      "verification": "passed-on-linux"
+    },
+    {
+      "case_id": "E2E12",
+      "status": "implemented",
+      "priority": "P1",
+      "contract": "confirmed-no-unsupported-pipe-mode",
+      "steps": [
+        {
+          "action": "launch_with_piped_io"
+        },
+        {
+          "action": "await_exit"
+        }
+      ],
+      "assertions": [
+        "Plain error message for unsupported noninteractive launch.",
+        "No terminal-mode escape sequences written.",
+        "No stack trace or secret/environment dump."
+      ],
+      "verification": "passed-on-linux"
+    },
+    {
+      "case_id": "E2E13",
+      "status": "implemented",
+      "priority": "P0",
+      "contract": "proposed-completion-on-consumed-positions",
+      "steps": [
+        {
+          "action": "launch_with_fixture",
+          "source": "abc"
+        },
+        {
+          "action": "send_text_as_keystrokes",
+          "text": "abx"
+        },
+        {
+          "action": "await_screen",
+          "screen": "results"
+        },
+        {
+          "action": "send_key",
+          "key": "Backspace"
+        },
+        {
+          "action": "assert_report_unchanged"
+        }
+      ],
+      "assertions": [
+        "Finish reason snippet_exhausted.",
+        "Uncorrected 1; errors 1; accuracy 66.666...%.",
+        "Backspace does not reopen completed test."
+      ],
+      "verification": "passed-on-linux"
+    },
+    {
+      "case_id": "E2E14",
+      "status": "implemented",
+      "priority": "P1",
+      "contract": "proposed-word-buffer-replenishment",
+      "steps": [
+        {
+          "action": "launch_with_seeded_small_word_chunk"
+        },
+        {
+          "action": "choose_settings",
+          "mode": "words",
+          "duration_seconds": 30
+        },
+        {
+          "action": "type_through_initial_chunk_before_deadline"
+        },
+        {
+          "action": "await_additional_words"
+        }
+      ],
+      "assertions": [
+        "Still running; no premature result.",
+        "Prefix and exactly one required inter-word separator preserved."
+      ],
+      "verification": "passed-on-linux"
+    }
+  ],
+  "runner": "tests/pty.rs",
+  "verified_platforms": [
+    "linux"
+  ],
+  "notes": [
+    "Scenario JSON is a specification mapped to the Rust driver, not an interpreted executable DSL.",
+    "E2E11 fault variants are lifecycle integration coverage using the feature-gated fixture binary.",
+    "Actual terminal fonts/themes and macOS have not been verified."
+  ]
+}
