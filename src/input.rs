@@ -12,6 +12,11 @@ pub enum Action {
     Right,
     ToggleMode,
     CycleDuration,
+    History,
+    Period,
+    Scope,
+    Graph,
+    ClearHistory,
     Quit,
     PasteRejected,
     SuspendRejected,
@@ -47,6 +52,11 @@ pub fn normalize(event: Event) -> Option<Action> {
                 KeyCode::Right => Some(Action::Right),
                 KeyCode::F(2) => Some(Action::ToggleMode),
                 KeyCode::F(3) => Some(Action::CycleDuration),
+                KeyCode::F(4) => Some(Action::History),
+                KeyCode::F(5) => Some(Action::Period),
+                KeyCode::F(6) => Some(Action::Scope),
+                KeyCode::F(7) => Some(Action::Graph),
+                KeyCode::F(8) => Some(Action::ClearHistory),
                 _ => None,
             }
         }

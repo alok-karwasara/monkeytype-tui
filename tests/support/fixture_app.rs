@@ -1,7 +1,7 @@
 use monkeytype_tui::{
     app::App,
     engine::{Mode, Settings, TestDuration},
-    runtime::{FailurePoint, run_fixture},
+    runtime::{FailurePoint, run_fixture, run_fixture_with_history},
 };
 use std::process::ExitCode;
 
@@ -21,7 +21,16 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         "words" => (Mode::Words, "red blue"),
         _ => return Err("unknown fixture".into()),
     };
-    let failure = match args.next().as_deref() {
+    let variant = args.next();
+    if variant.as_deref() == Some("history") {
+        let path = args.next().ok_or("history path required")?;
+        return run_fixture_with_history(
+            App::with_fixture(Settings { mode, duration }, source)?,
+            None,
+            path.into(),
+        );
+    }
+    let failure = match variant.as_deref() {
         None => None,
         Some("init") => Some(FailurePoint::AfterInitialization),
         Some("partial-init") => Some(FailurePoint::PartialInitialization),

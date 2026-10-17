@@ -5,11 +5,15 @@ requirements below reflect the design discussion; formulas, the provisional
 60-second default, ASCII scope, and UX policies remain open to product review.
 Performance figures below are targets, not measured guarantees.
 
-Current evidence: 25 Rust engine/input/application/rendering tests (including
-56 fixture examples and generated invariant checks), 13 fast PTY scenarios,
+Current evidence: 64 named Rust tests (including the original
+56 fixture examples and generated invariant checks), 24 fast PTY scenarios,
 and a separate real 30-second timeout scenario pass in this workspace. Formatting
 and Clippy with warnings denied also pass. macOS and real-emulator theme/font
 checks have not been run. See [README.md](README.md) for commands.
+
+Local aggregate history, Recent/Progress views, purge, and randomized bundled
+content are implemented. Sections 15–16 describe the actual storage/UI design.
+Tests were written first; execution evidence is in history-test-cases.md.
 
 ## 1. Interview opening: explain the system in one minute
 
@@ -44,7 +48,7 @@ more attention than distributed infrastructure for this product.
 | Mistakes | Allow forward progress and mark errors; report error count and accuracy. |
 | Code termination | End on time expiry or snippet completion, whichever comes first. |
 | Platforms | Linux and macOS first. |
-| History | Deferred. `// TODO: add saved aggregate history after the first release.` |
+| History | Save completed aggregates locally, show recent results and progress graphs, preserve data on normal uninstall, and clear/purge only explicitly. See sections 15–16. |
 
 Automatic movement across code line breaks is the proposed interpretation of
 "like word typing, but looking like code." Enter is not required to reproduce
@@ -69,9 +73,9 @@ not a claim of matching Monkeytype's implementation.
 ### First-release exclusions
 
 Accounts, cloud synchronization, leaderboards, code execution, full editor
-navigation, plugins, and saved history are outside the initial design. Persistent
-settings can also wait: settings may live in memory for the process lifetime.
-This avoids choosing a storage format before there is a persistence requirement.
+navigation, and plugins remain outside the initial design. Saved aggregate
+history is implemented; its design is in section 15.
+Persistent settings can still wait: settings live in memory for the process lifetime.
 
 ### Interview sizing
 
@@ -97,7 +101,8 @@ supporting user-imported material; do not retain every historical keystroke.
 | Terminal backend | Compatible Crossterm | Keyboard events, resize, polling, and terminal control. |
 | Execution | Synchronous event loop | Work is local and bounded; no concurrency is needed for typing and drawing. |
 | Timing | `std::time::Instant` at the boundary | Monotonic elapsed time, converted to injected durations for engine tests. |
-| Content | Bundled licensed text/snippets | Offline, reproducible, no downloads or code execution. |
+| Content | Bundled curated words and original snippets; rand selection | Offline, varied exercises without downloads or code execution; provenance tracked in src/content/PROVENANCE.md. |
+| History | Bundled SQLite through rusqlite | Local transactions, filtered aggregates, code-deck reservation; no user database installation. |
 | Tests | Rust unit tests, Ratatui TestBackend, PTY E2E harness | Separate logic correctness, rendering, and real process behavior. |
 
 The verified stack snapshot from this discussion is Rust 1.99.1, Ratatui 0.30.2,
@@ -123,6 +128,10 @@ flowchart LR
     Prepare --> Engine[Typing engine]
     App --> Engine
     Engine --> App
+    App --> Completed[One-shot completion summary]
+    Completed --> Runtime
+    Runtime --> History[SQLite repository outside active typing]
+    History --> App
     App --> View[Read-only view model]
     View --> Renderer[Ratatui rendering]
     Renderer --> Screen[User terminal]
@@ -147,6 +156,7 @@ sequenceDiagram
     participant App
     participant Engine
     participant UI
+    participant History
     Main->>App: Prepare mode, duration, and prompt
     App->>Engine: Compile displayed source and scored positions
     Main->>Runtime: Initialize terminal and monotonic clock
@@ -159,6 +169,10 @@ sequenceDiagram
         Runtime->>App: Dispatch normalized action, if present
         App->>Engine: Apply accepted input if still running
         Engine-->>App: Progress or terminal outcome
+        opt Completion effect or inactive history navigation
+            Runtime->>History: Save or query aggregate state
+            History-->>App: Snapshot or visible failure status
+        end
         Runtime->>UI: Draw latest state when due
     end
     Runtime->>Main: Return outcome
@@ -665,7 +679,7 @@ These are tradeoffs for this workload, not claims that the alternatives are bad.
 | Go with Bubble Tea | Event-loop UI model and straightforward distribution | Rust is the agreed direction and lets this codebase forbid application unsafe code; changing languages adds no current product benefit. | Team expertise or ecosystem requirements change. |
 | Python with Textual | Fast UI iteration and a rich framework | Adds an interpreter/framework deployment choice; compiled Rust fits the current stack preference. | Prototyping speed or an existing Python product dominates. |
 | Browser/Electron application | CSS typography and familiar web tooling | Changes the requested terminal product and runtime footprint. | A separate desktop/web frontend is requested. |
-| SQLite or append-only result files now | Durable history and reporting | History is explicitly deferred; persistence and migrations solve no first-release requirement. | Aggregate history becomes an implemented feature. |
+| Persistence before a history requirement | Durable history and reporting | Originally deferred to avoid speculative storage. The requirement now exists; section 15 recommends SQLite and compares file storage. | Current history work. |
 | Language AST/parser for snippets | Syntax-aware selection and highlighting | Typing correctness uses exact characters, not program semantics. | Language-aware exercises or highlighting justify it. |
 | Edit distance for live alignment | Can infer missed/extra characters | May hide failures or jump the caret; harder to explain and score consistently. | Adaptive error alignment is explicitly requested. |
 | Scoring the raw formatted file | Simplest representation | Violates the requirement to skip indentation and trailing whitespace. | A separate exact-formatting practice mode is requested. |
@@ -675,12 +689,10 @@ These are tradeoffs for this workload, not claims that the alternatives are bad.
 
 ### What happens when history is added?
 
-Add a results repository boundary after session completion, outside the hot
-input path. Store aggregate report values, duration, mode, content identifier,
-metric-definition version, and completion reason. Avoid raw typed text.
-Pick an atomic file format for simple append/read needs or SQLite for meaningful
-querying; justify the choice against actual requirements. Persistence failure
-must not prevent results from being shown or terminal cleanup.
+History is implemented through a results repository boundary after completion,
+aggregate-only records, and bundled SQLite transactions. Persistence failures
+leave results visible and preserve future practice and terminal cleanup.
+See sections 15–16 and the history test catalog for details.
 
 ### How would we diagnose slow input?
 
@@ -729,8 +741,8 @@ needed to inherit default colors and font.
 5. Implemented: Instrument practice, settings, and results views with resize tests.
 6. Implemented: PTY coverage and Linux checks. Pending: macOS/manual appearance
    validation, product review of provisional behavior, and a release dependency audit.
-7. Keep history as a documented TODO; update this design and `AGENTS.md` as
-   behavior becomes implemented or accepted requirements change.
+7. Implemented: local aggregate history, progress dashboard, explicit purge, and
+   varied bundled content. Pending release/platform work remains as above.
 
 ## 14. Application distribution
 
@@ -778,8 +790,8 @@ targets are intended to link the C runtime statically to avoid a host glibc
 dependency; inspect the built artifacts to confirm linkage before release.
 The local GNU Linux preview instead uses host-compatible system libraries.
 Inspection with `file` and `readelf -d` confirms that this preview is an x86_64
-ELF executable whose declared shared-library dependencies are `libc.so.6` and
-`libgcc_s.so.1`, with no dynamic Rust-library dependency. This is evidence for
+ELF executable whose declared shared-library dependencies are libc.so.6,
+libgcc_s.so.1, and libm.so.6, with no dynamic Rust or SQLite-library dependency. This is evidence for
 the local preview, not for the other planned release targets.
 macOS executables can depend on libraries supplied by macOS. All variants still
 need a compatible OS/kernel version and terminal. Compiling from source remains
@@ -825,8 +837,341 @@ release or evidence that unrun platforms pass.
 
 The installed-artifact check (`tests/packaging.py --archive PATH`) verifies the
 checksum and explicit asset list, installs into a temporary prefix, runs
-`--version`/`--help`, and drives the installed app through typing and quit in a
-PTY, checking restored terminal settings. It supplies an isolated environment
+`--version`/`--help`, completes/saves a code test in a PTY, removes/reinstalls
+the binary, and reopens retained History/Progress, checking terminal restoration. It supplies an isolated environment
 whose PATH excludes this workspace's Rust toolchain. This verifies the installed
 executable's behavior without invoking build tools; it does not claim that Rust
 was uninstalled from the test host or that unrun platforms passed.
+
+## 15. Local history: implementation design
+
+Status: implemented after test-first acceptance cases. History is enabled by
+default and stores completed aggregate records only. All mapped Linux tests
+pass; manual terminal appearance and other platforms remain unverified here.
+
+### Product scope and history screen
+
+- Save one aggregate record for a completed test: timeout or snippet exhausted.
+  Do not save abandoned, never-started, or interrupted tests as completed runs.
+- Enable local saving by default, with visible saved/unsaved status on results.
+  Provide `--no-history` for a run with no history reads, writes, directory
+  creation, migrations, or deletion. No network or accounts are introduced.
+- F4 opens history from ready/results only. Ignore it while typing. Esc returns
+  to the exact prior screen; opening history never creates or restarts a test.
+- Show recent sessions newest-first, 50 per page, with UTC completion date/time,
+  mode, selected duration, actual elapsed time, finish reason, WPM, raw WPM,
+  accuracy, and error count. Use the existing terminal palette and text cues.
+- Filter by words/code and selected duration. Show session count, best WPM, and
+  weighted accuracy for the chosen comparison group. A short completed code
+  snippet and a full timed word test must not become the same leaderboard.
+- Compare only the same metric-definition version. Code bests additionally
+  require the same exercise ID/version, duration, and completion reason; recent
+  code runs may still be listed together. Do not label unlike exercises as a PB.
+- Offer clear-all with explicit confirmation, defaulting to cancel. Keep records
+  until the user clears them; no automatic expiry in the first iteration.
+  Stats and charts are now requested for this iteration; section 16 extends the
+  dashboard design. Export/import, per-key analysis, streaks, and cloud sync can
+  follow later.
+
+### Technology and alternatives
+
+Keep the current stable Rust/Ratatui/Crossterm stack and synchronous event loop.
+Use rusqlite 0.40.2 with bundled/fallible_uint features and Cargo.lock pinning.
+The fallible integer conversions reject out-of-range unsigned counters. SQLite's embedded
+model fits local application storage without a server. Its bundled library is
+compiled and linked during our build, so users need neither SQLite nor Rust
+installed. See [SQLite use cases](https://sqlite.org/whentouse.html) and
+[rusqlite build documentation](https://github.com/rusqlite/rusqlite#notes-on-building-rusqlite-and-libsqlite3-sys).
+
+Use `std::time::SystemTime` for stored UTC wall-clock timestamps and retain
+`Instant`/injected durations for measurements. uuid 1.28.0 constructs a stable
+random UUID-shaped record ID from the session selector, reused across retries;
+these IDs are not security tokens. time 0.3.55 provides UTC calendar components
+for readable dates. Do not enable local-time discovery,
+serialization integrations, SQLite extensions, an ORM, or an async runtime
+without a requirement. Recheck versions and compatibility when upgrading.
+SQLite is native C behind Rust bindings; forbidding unsafe in application code
+does not make every dependency memory-safe. Include it in dependency review.
+
+| Alternative | Advantage | Why SQLite was selected |
+| --- | --- | --- |
+| One JSON document | Easy to inspect and export | Every update needs a protected read/modify/atomic-replace cycle; two app instances need locking to avoid lost updates. |
+| Append-only JSONL | Small initial implementation | Crash-tail repair, deduplication, grouping, and clear/rewrite locking become custom storage work. |
+| Embedded Rust key/value store | Avoids the SQLite C dependency | Requires application indexes/aggregation for these relational queries; reconsider if avoiding C becomes a firm requirement. |
+| SQLx / ORM | Async and richer database abstraction | Current synchronous, single-table local workload does not require them. |
+| Hosted database | Multi-device access | Adds accounts, networking, credentials, and service operations outside this request. |
+
+### High-level flow and ownership
+
+```mermaid
+flowchart LR
+    E[Engine finishes and freezes report] --> A[App transitions to Results once]
+    A --> F[Completion effect with immutable summary and session ID]
+    F --> R[Runtime handles effect after active timing ends]
+    R --> D[History repository and SQLite transaction]
+    D --> S[Saved or unsaved status on Results]
+    H[F4 from ready or results] --> Q[Paginated history query]
+    Q --> V[History screen and grouped statistics]
+```
+
+The engine continues to know nothing about the filesystem, SQLite, wall clocks,
+or history UI. In the current code, completion can be discovered by runtime
+`tick`, dispatch's initial deadline check, or its final tick after a character.
+The centralized Results transition emits one Completion summary for all of them. Drain effects after both tick and dispatch, before interpreting a later
+restart/quit. Store a frozen summary, not references to mutable settings.
+
+Initially perform repository work synchronously only at startup, after completed
+timing, or while the history/results screens are inactive. Do not query, write,
+or migrate in the active typing path or renderer. Use short lock waits and
+measure actual storage latency; introduce a single storage worker only if UI
+stalls justify it. No background retry may start disk work during a later test.
+
+Modules: history/model.rs owns validated summaries/filter/page types;
+history/store.rs and schema.sql own transactions and the v0-to-v1 migration;
+history/path.rs owns private app locations and no-follow files; service.rs
+coordinates completion/retry/clear/query effects at the runtime boundary.
+app.rs owns completion effects and navigation; ui.rs renders state only.
+There is no separate migrations.rs while only one schema migration exists.
+Keep an injectable repository boundary for tests,
+without introducing separate Cargo crates.
+
+### Low-level record and schema
+
+One `sessions` table stores completed results; section 16 adds a separate table
+for content-selection state. Session fields:
+
+| Field | Meaning |
+| --- | --- |
+| `id` | Unique stable UUID assigned outside the engine; reused for every save retry. |
+| `completed_ms` | UTC completion timestamp; not used to calculate elapsed time. |
+| `mode`, `seconds` | Words/code and selected 30/60/120 limit. |
+| `elapsed_ns`, `reason` | Actual monotonic elapsed duration and timeout/snippet-complete outcome. Nanoseconds preserve the report's measurement precision. |
+| `exercise_id`, `exercise_version` | Stable bundled corpus/snippet identity; no prompt/source text. Add identity to content preparation rather than inferring from display text. |
+| `pool`, `pool_version`, `language` | Identify the word pool/code collection and optional code language for filtering and fair comparisons as content expands. |
+| `attempts`, `correct_attempts`, `current_correct`, `backspaces`, `uncorrected` | Integer aggregates from the frozen report; no character values. |
+| `wpm`, `raw_wpm`, `accuracy` | Snapshot of the displayed metrics; nullable when unavailable. |
+| `metric_version`, `app_version` | Scoring-definition version and producing app version. Schema version is separate. |
+
+Use SQLite STRICT tables with NOT NULL/CHECK constraints where appropriate,
+bounded integers, enumerated modes/reasons, and finite/range-checked metrics at
+the Rust boundary. Counters must satisfy the engine's invariants; reject malformed
+records without corrupting the current report. An IMMEDIATE transaction checks
+the session ID then inserts with parameterized SQL. On an existing ID, compare
+the immutable summary before acknowledging a retry; conflicting data is rejected.
+This implements deduplication without broadly ignoring unrelated SQL errors. Show Saved only after a successful
+commit or verified matching existing record.
+
+Index newest-first pagination on `(completed_ms DESC, id DESC)`
+and comparison groups on `(metric_version, mode, seconds, pool_version,
+exercise_id, exercise_version, reason)`. Read page and statistics in one
+read transaction for a consistent snapshot. Use keyset pagination with the
+timestamp/ID tie-breaker, deterministic ordering even for equal timestamps,
+and bounded page results. Never read all history into a render frame.
+
+Compute errors as `attempts - correct_attempts`; weighted group accuracy is
+`100 * sum(correct_attempts) / sum(attempts)`, not the average of percentages.
+Exclude unavailable WPM values from bests. Group statistics must explicitly
+describe their filters; code completion remains actual-duration scoring.
+
+Apply schema migrations transactionally and track PRAGMA user_version. Read/recheck
+the version inside the IMMEDIATE write transaction to prevent stale initialization
+when two instances launch against a new database.
+An unknown newer schema disables history with a visible notice; never downgrade,
+overwrite, or delete it automatically. Start with rollback journaling and full
+commit synchronization, rather than adding WAL maintenance for one small
+post-test write. Configure a 100 ms SQLite busy timeout. That bounds
+lock waiting, not all disk latency; concurrent instances may receive an unsaved
+notice and retry explicitly on Results with the same session ID.
+
+### Storage location, privacy, and failures
+
+On Linux use `$XDG_STATE_HOME/monkeytype-tui/history.sqlite3`, falling back to
+`~/.local/state/monkeytype-tui/history.sqlite3`; accept only absolute XDG paths.
+The [XDG specification](https://specifications.freedesktop.org/basedir/0.8/)
+identifies history as persistent user state. On macOS use
+`~/Library/Application Support/monkeytype-tui/history.sqlite3`. An explicit
+`--history-dir /absolute/path` supports controlled test/install locations.
+`--no-history` takes precedence and bypasses location resolution and storage.
+
+Read only the named nonsecret path variables needed by the app; never enumerate
+the process environment, inspect shell profiles/environment files, or scan user
+directories. Agent tests must use temporary injected paths, never the user's
+existing history. Create app-owned directories/files with owner-only Unix
+permissions (0700/0600); preserve unrelated files and do not follow unexpected
+database symlinks. The database is local and not encrypted; do not describe
+ordinary clear-all as secure erasure. Backups/import are later explicit actions.
+
+If creation, migration, locking, disk writes, or queries fail, show a concise
+history-unavailable/unsaved status. Preserve the current results in memory and
+allow more practice and normal cleanup. Never silently reset a corrupt database,
+claim an unsuccessful save succeeded, or auto-delete history on upgrade/uninstall.
+
+### Implementation and acceptance checks
+
+1. Implemented summary types, defaults/comparison groups,
+   stable exercise identities, metric version 1, and one-shot completion effects.
+2. Implemented bundled SQLite, schema/migrations, explicit path handling, disabled mode,
+   validation, and temporary-directory repository tests.
+3. Connected completion effects at the runtime boundary; add visible Saved/Unsaved
+   state and an explicit retry path. Test no duplicate saves on redraw/restart,
+   snippet completion, timeout-in-overlay, or deadline-coincident quit/navigation.
+4. Implemented history navigation, pagination, filters, and grouped stats using the
+   existing Ratatui layout; add rendering and state-transition tests.
+5. Implemented PTY tests: finish, quit/relaunch, inspect saved result; incomplete/abandoned
+   runs excluded; no-history creates/reads nothing; clear cancellation preserves
+   data; confirmation clears; failed storage still permits typing and safe exit.
+6. Verified rollback on migration failure, unknown schema, malformed/corrupt DB,
+   locked/read-only storage, duplicate IDs, equal timestamps, metric versions,
+   and comparisons across mode/duration/exercise. Verify schema contains no raw
+   text fields and persisted fixture data contains no typed/source strings.
+7. Updated README, test catalog, release notices, and the four-target workflow.
+   Only the local GNU package has run here; native workflow targets remain unrun.
+   Verify the installed binary saves/loads history without system SQLite or Rust.
+   Run the existing scoring/timing/cleanup suites and measure storage/UI latency.
+
+The mapped cases are executable and pass on Linux; see history-test-cases.md.
+Performance numbers remain unmeasured targets. The release workflow will verify
+other native targets; no macOS/ARM/musl pass is inferred from local GNU checks.
+
+## 16. History lifecycle, progress dashboard, and varied exercises
+
+Status: implemented. Stats, charts, varied practice, uninstall/reinstall
+retention, and explicit purge have Linux unit/renderer/PTY/package coverage.
+The following describes current behavior and remaining platform limits.
+
+### Uninstall, reinstall, and purge
+
+The installed executable and docs belong under the installation prefix; the
+history database belongs under the user's state/application-data location from
+section 15. Removing one must not implicitly remove the other.
+
+| Action | Executable/docs | History and content-selection state |
+| --- | --- | --- |
+| Normal uninstall | Removed by the user's uninstall process | Preserved. |
+| Reinstall or upgrade | Installed/replaced | Reopened; supported migrations preserve records. |
+| Clear history in app | Kept | Delete result records/derived stats and reset selection state after explicit confirmation. |
+| Explicit data purge | Kept unless followed by uninstall | Remove app-owned database and its journals/selection state after explicit confirmation. |
+| Purge then uninstall | Removed | Removed by the preceding purge. |
+
+The `monkeytype-tui history purge` command runs before uninstall and requires
+typing PURGE; Enter/other input/EOF cancels. If the binary was already removed,
+reinstall and purge, or explicitly remove only the documented app-owned state
+files. Do not imply that a future OS package manager's purge necessarily erases
+per-user data. A custom --history-dir must use the same documented lifecycle.
+
+Purge must close its database connection and acquire exclusive lifecycle access;
+if another instance is using history, refuse rather than unlinking a live database.
+All normal history connections participate in that lifecycle lock. Remove only
+known app-owned files, handle missing files idempotently, reject unexpected
+symlinks, and preserve unrelated files even inside a custom directory. Partial
+deletion failures must be reported honestly. Purge is ordinary deletion, not
+secure erasure of filesystem snapshots/backups. Normal app startup and the
+installer must never purge data. --no-history never reads/deletes stored history.
+Purge retains an empty history.lock: deleting the lock inode would allow new
+instances to lock a different inode while a previous purger still holds its lock.
+The empty coordination file contains no results, identifiers, or selection state.
+
+### Progress dashboard and meaningful patterns
+
+Add Recent and Progress views under the history screen. Keep filters visible:
+mode, selected duration, metric version, content pool/version, optional code
+language/exercise, and period (7/30 days/all-time). Keep raw WPM and corrected
+WPM distinctly labeled. Current dashboard:
+
+- Cards: completed tests, total actual practice time, best and median WPM for
+  comparable groups, and weighted accuracy from summed attempts/correct attempts.
+- Speed chart: at most the latest 50 comparable sessions, ordered oldest-first,
+  with a trailing 10-session mean when ten samples exist.
+- Accuracy chart: a separate selectable chart with a labeled percentage axis;
+  never overlay percentages on the WPM axis without clear units.
+- Activity bars: summed actual practice minutes per UTC day for the last 30 days.
+  Fill empty days with zero; label the UTC boundary consistently.
+- Pattern summary: when at least 20 comparable sessions exist, compare the mean
+  WPM of the latest ten with the previous ten and report the numerical change.
+  Describe an observed change, not a guaranteed improvement or causal diagnosis.
+
+Use Ratatui's existing Chart, Sparkline, and BarChart widgets. No browser, image
+assets, charting service, or new plotting dependency is required. Preserve terminal
+colors/font and text labels; narrow layouts show compact text/sparklines, and
+the existing too-small fallback still applies. Sources:
+[Chart](https://docs.rs/ratatui/latest/ratatui/widgets/struct.Chart.html),
+[Sparkline](https://docs.rs/ratatui/latest/ratatui/widgets/struct.Sparkline.html).
+
+Group comparisons by mode/duration/metric version and word-pool version. For code,
+exercise-specific PBs require matching exercise/version and finish reason as in
+section 15. A mixed-snippet overview is allowed for activity and exploratory
+speed trends, but must say "mixed snippets" and must not claim an equivalent
+difficulty PB or improvement. Varied content and strict comparison identity
+serve different purposes; neither should silently change the meaning of stats.
+
+These charts use per-test summaries, not raw input or per-character samples.
+They cannot identify particular weak keys or reconstruct speed within a test.
+If those features are requested later, discuss additional aggregate counters
+explicitly before collecting them. Missing metrics are unavailable, not zero.
+Show no-data/insufficient-data states and flat/one-point charts without inventing
+values or dividing by zero. Queries return bounded chart points/aggregates and
+run on history navigation/filter changes, never on each frame or during typing.
+
+### Typing data and selection
+
+The original starter had 78 words/four snippets and reset a deterministic
+sequence on every launch. That limitation is fixed: src/content.rs now embeds
+1,598 unique curated ASCII English words and 60 original short exercises, 20
+each of Rust/Python/JavaScript, using content/words.txt and content/catalog.rs.
+The list is alphabetized, not frequency ranked. No user files or network service
+supply text. content/PROVENANCE.md records AI-assisted curation/authorship.
+Exercise IDs/versions and pool versions identify historical comparisons.
+Language metadata is included; category/difficulty metadata is not yet needed. Review licenses/provenance
+for every imported collection before bundling; prefer original authored code
+and maintain a small provenance manifest. Never copy another app's dataset
+without reviewing its license. All normal practice stays offline.
+
+Use the rand crate for randomized selection; its current documentation reports
+0.10.3. Obtain selector entropy fallibly from OS randomness before startup,
+then use the in-memory generator for selection and deduplication IDs; inject
+seeded generators in tests. Do not sample OS randomness per keystroke. Randomness
+does not require reading secrets or environment files. See
+[rand documentation](https://docs.rs/rand/latest/rand/).
+
+- Words: draw shuffled blocks from the chosen pool, reshuffle after exhaustion,
+  avoid immediate repeated words across block boundaries, and maintain the stream
+  as word mode replenishes. Generate a fresh order per session; randomness cannot
+  promise that a finite word bank never repeats words or combinations forever.
+- Code: shuffle stable snippet IDs into a deck, present each once before
+  reshuffling, and avoid repeating the last snippet at the next deck boundary.
+  Keep authored indentation/newlines intact; the scoring compiler still skips
+  line edges and requires internal spaces/punctuation.
+- With history enabled, content_selection stores ordered remaining IDs and
+  content_meta stores catalog version and last presented ID for the code pool.
+  Reserve an exercise transactionally while preparing ready state, outside active
+  timing, so two instances cannot accidentally reserve the same deck entry.
+  Persist selection separately from completed sessions: abandoning a shown
+  exercise must not cause that exercise to be forced again on the next launch.
+- On a catalog update, discard obsolete deck IDs and rebuild an eligible deck
+  without changing old result identities. If selection persistence fails, show
+  a concise notice and continue with in-memory selection; cross-launch no-repeat
+  behavior cannot be promised in that case.
+- With --no-history, keep all selection state in memory and use fresh randomness.
+  Avoid repeats within that run, but make no cross-launch guarantee because
+  reading/writing prior state is explicitly disabled. Purge/clear starts a new
+  selection history; a later match to previously removed records is possible.
+
+Do not scan the user's repositories, documents, environment, or secret stores
+for typing material. Future user-imported exercises must use explicit paths
+and the existing size/control-character/encoding validation boundary.
+
+### Additional acceptance checks
+
+- Uninstall/reinstall retains a temporary test database; explicit purge removes
+  owned data only; cancellation and concurrent-open refusal preserve it.
+- Dashboard SQL and pure aggregation tests cover weighted accuracy, periods,
+  empty days, UTC boundaries, comparison groups, missing metrics, and rolling
+  windows. Renderer tests cover no/one/flat series, narrow layouts, and labels.
+- Seeded selection tests cover word chunk boundaries, complete code deck coverage,
+  deck reset, language eligibility, catalog upgrades, concurrent reservations,
+  abandonment, and state across process launches. Test invariants rather than
+  claiming random outputs can never coincide across fresh independent runs.
+- PTY tests cover History/Progress navigation, restart retention, disabled-state
+  privacy, and nonrepeating code presentation with an injected temporary state
+  directory. Installed-package tests continue to require no external data files,
+  database server, Rust compiler, or network access on the user's machine.

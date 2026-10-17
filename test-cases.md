@@ -336,6 +336,10 @@ The PTY resize scenario caught and verified a fix for stale input dimensions.
 A unit regression also checks that a deadline-coincident Enter/Esc is not
 reinterpreted as navigation away from an expiring session's results.
 
+History and varied-content work adds 39 named Rust tests and 11 PTY scenarios,
+all passing on Linux. See [history-test-cases.md](history-test-cases.md) for the
+test-first acceptance map and [README.md](README.md) for the new UI/CLI controls.
+
 ## 13. Release package verification
 
 Run `python3 tests/packaging.py` for PKG01–06. Run
@@ -351,7 +355,7 @@ original 98-case application catalog.
 | PKG04 | Wrong OS/CPU target fails before installation directories are created. |
 | PKG05 | Notices include public dependency license text, exclude dev-only packages, and contain no local metadata paths. |
 | PKG06 | Mismatched release tag is rejected before packaging. |
-| PKG07 | Real archive checksum and explicit contents pass; temporary installation launches --version/--help without Rust, renders READY in a PTY, accepts typing, quits on Ctrl+C, and restores terminal settings. |
+| PKG07 | Real archive checksum and explicit contents pass; temporary installation launches --version/--help without Rust, completes/saves a code test in a PTY, removes/reinstalls the binary, reopens retained history/dashboard, and restores terminal settings on exit. |
 
 The four-platform release workflow runs these checks natively. A local GNU Linux
 package check does not establish macOS, ARM64, or static musl results.

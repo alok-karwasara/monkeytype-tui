@@ -47,10 +47,25 @@ jobs:
         if: matrix.target == 'x86_64-unknown-linux-musl'
         run: cargo test --locked --features test-support --test pty -- --slow
       - name: Build production executable
+        env:
+          CC_x86_64_unknown_linux_musl: musl-gcc
+          CC_aarch64_unknown_linux_musl: musl-gcc
         run: |
           cargo build --locked --release --no-default-features --bin monkeytype-tui --target "$RELEASE_TARGET"
           "target/$RELEASE_TARGET/release/monkeytype-tui" --version
           "target/$RELEASE_TARGET/release/monkeytype-tui" --help
+      - name: Verify Linux release is standalone
+        if: runner.os == 'Linux'
+        run: |
+          python3 - <<'PY'
+          import os, subprocess
+          binary = 'target/' + os.environ['RELEASE_TARGET'] + '/release/monkeytype-tui'
+          dynamic = subprocess.check_output(['readelf', '-d', binary], text=True)
+          headers = subprocess.check_output(['readelf', '-l', binary], text=True)
+          assert 'NEEDED' not in dynamic, 'musl release must not need shared libraries'
+          assert 'INTERP' not in headers, 'musl release must not need a dynamic loader'
+          print('Static Linux linkage verified')
+          PY
       - name: Package executable and notices
         run: |
           cargo metadata --locked --format-version 1 --filter-platform "$RELEASE_TARGET" > target/release-metadata.json

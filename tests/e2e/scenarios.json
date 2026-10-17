@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "status": "scenario-specifications-with-implemented-runner",
-  "design_reference": "system-design.md section 10; test-cases.md section 10",
+  "design_reference": "system-design.md sections 10, 15–16; test-cases.md; history-test-cases.md",
   "platforms": [
     "linux",
     "macos"
@@ -494,6 +494,215 @@
         "Prefix and exactly one required inter-word separator preserved."
       ],
       "verification": "passed-on-linux"
+    },
+    {
+      "case_id": "H2E01",
+      "status": "implemented",
+      "priority": "P0",
+      "contract": "confirmed",
+      "steps": [
+        {
+          "action": "run_rust_scenario",
+          "runner": "tests/pty.rs",
+          "case": "H2E01"
+        }
+      ],
+      "assertions": [
+        "Complete/save, history/progress navigation, relaunch retains result.",
+        "All filesystem access uses owned temporary state.",
+        "PTY scenarios restore terminal modes, screen, and cursor on exit."
+      ],
+      "verification": "passed-on-linux"
+    },
+    {
+      "case_id": "H2E02",
+      "status": "implemented",
+      "priority": "P0",
+      "contract": "confirmed",
+      "steps": [
+        {
+          "action": "run_rust_scenario",
+          "runner": "tests/pty.rs",
+          "case": "H2E02"
+        }
+      ],
+      "assertions": [
+        "Disabled history overrides directory and creates no state.",
+        "All filesystem access uses owned temporary state.",
+        "PTY scenarios restore terminal modes, screen, and cursor on exit."
+      ],
+      "verification": "passed-on-linux"
+    },
+    {
+      "case_id": "H2E03",
+      "status": "implemented",
+      "priority": "P0",
+      "contract": "confirmed",
+      "steps": [
+        {
+          "action": "run_rust_scenario",
+          "runner": "tests/pty.rs",
+          "case": "H2E03"
+        }
+      ],
+      "assertions": [
+        "Abandon or interrupt excludes incomplete tests from completed history.",
+        "All filesystem access uses owned temporary state.",
+        "PTY scenarios restore terminal modes, screen, and cursor on exit."
+      ],
+      "verification": "passed-on-linux"
+    },
+    {
+      "case_id": "H2E04",
+      "status": "implemented",
+      "priority": "P0",
+      "contract": "confirmed",
+      "steps": [
+        {
+          "action": "run_rust_scenario",
+          "runner": "tests/pty.rs",
+          "case": "H2E04"
+        }
+      ],
+      "assertions": [
+        "Blocked storage preserves unrelated file; typing/results/cleanup still work.",
+        "All filesystem access uses owned temporary state.",
+        "PTY scenarios restore terminal modes, screen, and cursor on exit."
+      ],
+      "verification": "passed-on-linux"
+    },
+    {
+      "case_id": "H2E05",
+      "status": "implemented",
+      "priority": "P0",
+      "contract": "confirmed",
+      "steps": [
+        {
+          "action": "run_rust_scenario",
+          "runner": "tests/pty.rs",
+          "case": "H2E05"
+        }
+      ],
+      "assertions": [
+        "Clear cancellation preserves data; explicit y clears it.",
+        "All filesystem access uses owned temporary state.",
+        "PTY scenarios restore terminal modes, screen, and cursor on exit."
+      ],
+      "verification": "passed-on-linux"
+    },
+    {
+      "case_id": "H2E06",
+      "status": "implemented",
+      "priority": "P0",
+      "contract": "confirmed",
+      "steps": [
+        {
+          "action": "run_rust_scenario",
+          "runner": "tests/pty.rs",
+          "case": "H2E06"
+        }
+      ],
+      "assertions": [
+        "Purge refuses active instance; cancellation and owned-files-only deletion.",
+        "All filesystem access uses owned temporary state.",
+        "PTY scenarios restore terminal modes, screen, and cursor on exit."
+      ],
+      "verification": "passed-on-linux"
+    },
+    {
+      "case_id": "H2E07",
+      "status": "implemented",
+      "priority": "P0",
+      "contract": "confirmed",
+      "steps": [
+        {
+          "action": "run_rust_scenario",
+          "runner": "tests/pty.rs",
+          "case": "H2E07"
+        }
+      ],
+      "assertions": [
+        "Four production launches consume distinct persisted code deck entries.",
+        "All filesystem access uses owned temporary state.",
+        "PTY scenarios restore terminal modes, screen, and cursor on exit."
+      ],
+      "verification": "passed-on-linux"
+    },
+    {
+      "case_id": "H2E08",
+      "status": "implemented",
+      "priority": "P0",
+      "contract": "confirmed",
+      "steps": [
+        {
+          "action": "run_rust_scenario",
+          "runner": "tests/pty.rs",
+          "case": "H2E08"
+        }
+      ],
+      "assertions": [
+        "Locked completion stays Unsaved; unlocked retry saves exactly once.",
+        "All filesystem access uses owned temporary state.",
+        "PTY scenarios restore terminal modes, screen, and cursor on exit."
+      ],
+      "verification": "passed-on-linux"
+    },
+    {
+      "case_id": "H2E09",
+      "status": "implemented",
+      "priority": "P0",
+      "contract": "confirmed",
+      "steps": [
+        {
+          "action": "run_rust_scenario",
+          "runner": "tests/pty.rs",
+          "case": "H2E09"
+        }
+      ],
+      "assertions": [
+        "Normal uninstall/reinstall retains history; installed package repeats the check.",
+        "All filesystem access uses owned temporary state.",
+        "PTY scenarios restore terminal modes, screen, and cursor on exit."
+      ],
+      "verification": "passed-on-linux"
+    },
+    {
+      "case_id": "H2E10",
+      "status": "implemented",
+      "priority": "P0",
+      "contract": "confirmed",
+      "steps": [
+        {
+          "action": "run_rust_scenario",
+          "runner": "tests/pty.rs",
+          "case": "H2E10"
+        }
+      ],
+      "assertions": [
+        "Future/corrupt schema is preserved; narrow screen and purge EOF remain safe.",
+        "All filesystem access uses owned temporary state.",
+        "PTY scenarios restore terminal modes, screen, and cursor on exit."
+      ],
+      "verification": "passed-on-linux"
+    },
+    {
+      "case_id": "H2E11",
+      "status": "implemented",
+      "priority": "P0",
+      "contract": "confirmed",
+      "steps": [
+        {
+          "action": "run_rust_scenario",
+          "runner": "tests/pty.rs",
+          "case": "H2E11"
+        }
+      ],
+      "assertions": [
+        "Paginate 123 results; speed/accuracy/activity graphs and narrow/filter controls.",
+        "All filesystem access uses owned temporary state.",
+        "PTY scenarios restore terminal modes, screen, and cursor on exit."
+      ],
+      "verification": "passed-on-linux"
     }
   ],
   "runner": "tests/pty.rs",
@@ -503,6 +712,7 @@
   "notes": [
     "Scenario JSON is a specification mapped to the Rust driver, not an interpreted executable DSL.",
     "E2E11 fault variants are lifecycle integration coverage using the feature-gated fixture binary.",
-    "Actual terminal fonts/themes and macOS have not been verified."
+    "Actual terminal fonts/themes and macOS have not been verified.",
+    "H2E01–11 cover local history/content/dashboard; PKG07 additionally tests the installed optimized artifact without build tools."
   ]
 }

@@ -23,8 +23,15 @@ and reliable terminal cleanup.
   from the scored input stream so ignored code formatting cannot affect metrics.
 - Allow progress through errors, mark them visibly, and report errors/accuracy.
   Code tests end on time expiry or snippet completion, whichever comes first.
-- Target Linux and macOS first. History is deferred:
-  `// TODO: add saved aggregate history after the first release.`
+- Target Linux and macOS first. Local aggregate history is implemented with
+  recent results, filtered stats, progress graphs, and explicit clear/purge.
+- Keep user data separate
+  from executable/docs: normal uninstall preserves it, reinstall reuses it, and
+  explicit purge removes owned history/selection state after confirmation.
+- Practice uses 1,598 curated common English words and 60 original snippets
+  (20 per Rust/Python/JavaScript). Shuffle words and code decks; persist code deck
+  reservations across launches when history is enabled/available. See provenance
+  in src/content/PROVENANCE.md; do not imply content is frequency ranked.
 
 ## Design artifacts and maintenance
 
@@ -51,7 +58,17 @@ and reliable terminal cleanup.
   `src/app.rs` owns screen transitions; input, UI, terminal, and runtime are
   separate modules. Bundled exercises are original project text in `content.rs`.
 - Run `cargo run --locked -- --mode code --duration 60`; use `--help` for usage.
-  F2/F3 change mode/duration from ready; Esc opens settings or abandon confirmation.
+  F2/F3 change mode/duration from ready; F4 opens history; Esc opens settings or
+  abandon confirmation. In History F4 switches Recent/Progress, F5 period, F6
+  code scope, F7 graph, F8 clear; Enter cancels clear and y confirms.
+- History saves completed aggregates by default. `--no-history` bypasses path
+  resolution and all history filesystem access. `--history-dir /absolute/path`
+  injects an owned location; normal paths use only HOME/XDG_STATE_HOME. Never
+  inspect actual user history while testing; use temporary injected paths.
+- `monkeytype-tui history purge` requires typing PURGE, refuses a live history
+  instance, and removes known DB/journals only. Keep the empty coordination lock;
+  unlinking it would let competing instances lock different inodes. No purge at
+  startup, install, upgrade, or normal uninstall. No secure-erasure claim.
 - `cargo test --locked` runs engine, input, transition, and rendering tests.
 - `cargo test --locked --features test-support --test pty` runs fast real-process
   scenarios; append `-- --slow` for the separate real 30-second timeout check.
@@ -65,10 +82,12 @@ and reliable terminal cleanup.
   resize events can lag behind the renderer's observed dimensions.
 - Linux automation is available here. Do not claim macOS or real-emulator
   theme/font validation without running those checks.
-- Current Linux evidence: 25 Rust test functions (including 56 fixture examples),
-  all 14 PTY scenario IDs including the real 30-second timeout, formatting, and
-  Clippy with denied warnings pass. This is not 98 independently passing tests;
-  manual/platform coverage in the catalog remains broader.
+- Current Linux evidence: 64 Rust test functions (including the original 56
+  fixture examples), 24 fast PTY IDs and the separate real 30-second timeout,
+  formatting, and Clippy with denied warnings pass. History tests were written
+  before implementation and the absent APIs produced the initial red result.
+  Catalog IDs cover variants and are not the number of named Rust functions;
+  real-emulator/macOS coverage remains unverified here.
 
 ## Privacy boundary
 
@@ -141,6 +160,34 @@ and reliable terminal cleanup.
 - Start the timer on the first accepted typing input. Specify and test WPM,
   accuracy, correction, and completion semantics before displaying statistics.
   Standard WPM uses five characters per word; label raw and corrected metrics.
+- History design is in system-design.md sections 15–16. Keep the engine
+  free of storage: emit one completion effect with a frozen summary, persist at
+  the runtime boundary, and deduplicate retries using a stable session ID.
+  Save metrics/counters only, never typed text, source snippets, or keystrokes.
+- Persistence: bundled SQLite via rusqlite, parameterized statements,
+  transactional schema migrations, bounded lock waits, and paginated queries.
+  No database I/O during active tests or rendering. Keep failures nonfatal and
+  visible; --no-history must avoid history filesystem access entirely.
+- F4 opens history from ready/results; preserve the previous screen.
+  Separate comparisons by mode, selected duration, and metric version, with
+  matching exercise/version for code records. Confirm before clearing history.
+- The dashboard uses Ratatui Chart/Sparkline/BarChart for WPM/accuracy trends
+  and daily practice time. Query bounded aggregates outside active tests; label
+  mixed-snippet code overviews and reserve PBs for comparable exercises.
+- The corpus uses bundled curated/authored exercises and
+  rand-based word shuffling/code shuffle bags. Preserve code deck state outside
+  active tests, including across launches; --no-history keeps selection in memory
+  only. Never fetch or scan user files for exercises. See design section 16.
+- `history/model.rs` owns validated summaries/filters; store.rs/schema.sql own
+  transactions/migration v1 and code reservations; path.rs owns private paths,
+  no-follow files, and service.rs handles runtime effects. No separate migration
+  crate/module or async worker is needed yet. Read page/stats in one snapshot.
+- Newly created state directories/files are 0700/0600; reject symlinked app
+  directory/DB/lock and writable access failures, while permitting OS aliases
+  in parent paths. Never change permissions on arbitrary existing directories.
+- Session IDs are UUID-shaped random deduplication IDs, not security tokens.
+  Obtain selector entropy fallibly before startup; injected seeds make content
+  tests reproducible. Do not introduce an OS entropy read on every keystroke.
 - Define Unicode handling explicitly. Never treat byte offsets as character
   positions; account for grapheme boundaries and terminal display width when
   supporting Unicode text.

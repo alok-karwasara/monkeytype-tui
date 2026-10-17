@@ -47,6 +47,7 @@ Alternatively, choose an existing prefix with `sh install.sh --prefix /absolute/
 the executable goes in its `bin` directory. Replace an existing installation
 with `sh install.sh --force`. To uninstall the default installation, remove
 `~/.local/bin/monkeytype-tui` and `~/.local/share/doc/monkeytype-tui`.
+This preserves your separate history database; reinstalling loads it again.
 
 ## Build and run from source (developers)
 
@@ -73,11 +74,14 @@ Run `cargo run --locked -- --help` for command-line usage.
 
 | Screen | Keys |
 | --- | --- |
-| Ready | F2 changes words/code; F3 cycles duration; Esc opens settings. |
+| Ready | F2 changes words/code; F3 cycles duration; F4 opens history; Esc opens settings. |
 | Settings | Up/Down or Tab selects a field; Left/Right changes it; Enter applies; Esc cancels. |
 | Typing | Type normally; Backspace corrects; Esc asks whether to abandon. |
 | Abandon prompt | Enter/y abandons; Esc/n resumes. The timer keeps running. |
-| Results | Enter starts a fresh ready test; Esc opens settings. |
+| Results | Enter starts a fresh ready test; F4 opens history; r retries an unsaved result; Esc opens settings. |
+| History | F4 switches Recent/Progress; Up/Down scroll rows; Left/Right change page; Esc returns. |
+| History filters | F2 mode; F3 duration; F5 7/30 days/all-time; F6 code scope; F7 speed/accuracy/activity. |
+| Clear history | F8 opens confirmation; y clears all results/deck state; Enter/Esc/n cancels. |
 | Any screen | Ctrl+C quits. `^C` in the compact footer means Ctrl+C. |
 
 Code indentation, trailing spaces, and line breaks are automatic. **Spaces inside
@@ -87,8 +91,12 @@ Code tests end at the time limit or when all required positions have been
 attempted; mistakes do not prevent completion. Word mode replenishes its prompt
 and continues until time expires.
 
-Exercises currently use ASCII text. Original bundled word exercises and Rust,
-Python, and JavaScript snippets rotate between tests; code is never executed.
+Exercises use ASCII text. A bundled pool of **1,598 common words** produces fresh
+shuffled sequences. **60 original code snippets** (20 each of Rust, Python, and
+JavaScript) use a shuffled deck that persists across launches when history works.
+Each snippet appears once per deck; after exhaustion the deck reshuffles, avoiding
+an immediate repeat. Code is never executed. No exercises are downloaded or read
+from your files. See [content provenance](src/content/PROVENANCE.md).
 The minimum layout is 40 columns × 12 rows. Below that size, input is ignored
 and a resize message appears; an active timer continues.
 
@@ -110,6 +118,53 @@ keystrokes cannot be distinguished reliably. Ctrl+Z does not suspend this versio
 These are this app's documented initial formulas, not a claim of exact scoring
 compatibility with Monkeytype. See [system-design.md](system-design.md) for the
 full contracts and tradeoffs.
+
+## Local history and progress
+
+Completed tests save aggregate metrics locally: completion time in UTC, mode,
+configured and actual duration, exercise identity, WPM/raw WPM, accuracy, errors,
+and counters. Abandoned/interrupted tests are excluded. **Typed text, snippets,
+and individual keystrokes are never stored.** Results show Saved/Unsaved; a storage
+failure lets you keep practicing, and `r` retries from Results with the same ID.
+
+F4 opens recent sessions and a Progress view with speed/accuracy trends, a
+10-test moving mean, daily practice minutes, and a latest-ten versus previous-ten
+speed comparison once twenty comparable measurements exist. Filters keep word
+pools, modes, durations, and metric versions separate. Mixed code snippets are
+labeled; exercise-specific PBs require the same exercise/version and finish reason.
+
+The database is `history.sqlite3` under:
+
+- Linux: `$XDG_STATE_HOME/monkeytype-tui`, or `~/.local/state/monkeytype-tui`.
+- macOS: `~/Library/Application Support/monkeytype-tui`.
+
+Use `--history-dir /absolute/path` to choose a private directory. Newly created
+directories/files use permissions 0700/0600. Existing directories must be private
+and files writable/private; symlinked app directories/database/lock files are
+rejected. Known parent directory aliases such as macOS `/tmp` are supported.
+SQLite is bundled in the executable; users do not install a database server or
+SQLite tools. No disk access occurs during active typing or rendering.
+
+For a run with no history access or state creation:
+
+```sh
+monkeytype-tui --no-history
+```
+
+This also keeps content selection in memory, so cross-launch repeat prevention
+is unavailable. History survives normal uninstall/update. To remove saved data
+before uninstalling, run:
+
+```sh
+monkeytype-tui history purge
+# For a custom location:
+monkeytype-tui history purge --history-dir /absolute/path
+```
+
+Type `PURGE` to confirm; other input/EOF cancels. Close other history-enabled app
+instances first. Purge removes only the app's database/journals; unrelated files
+are preserved. It leaves an empty `history.lock` for safe coordination. Clear/purge
+are ordinary deletion, not secure erasure of backups or filesystem snapshots.
 
 ## Tests
 
@@ -154,14 +209,15 @@ lifecycle integration coverage. Test workers clean up only their own processes.
 The [test catalog](test-cases.md) maps design cases to expected behavior and
 prepared JSON data. A PTY cannot establish your emulator's exact font, theme,
 or contrast; those still need manual checks in the terminal you use.
+The [history test catalog](history-test-cases.md) maps persistence, graphs,
+content variation, purge, and installed-package scenarios to executable tests.
 
 ## Project boundaries
 
 The app does not read environment files or secret stores, make network requests,
-log typed text, or save results. Dependencies need network access once during
+or log typed text. It reads only named nonsecret home/state path variables to find
+its own local aggregate database. Dependencies need network access once during
 setup unless already cached; application usage is offline.
-
-`// TODO: add saved aggregate history after the first release.`
 
 Linux has automated validation in the current workspace. macOS remains a target
 that needs its own verification. Full Unicode exercises, persistent settings,

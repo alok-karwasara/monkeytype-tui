@@ -18,17 +18,28 @@ This is separate from publishing a crate on crates.io; `publish = false` stays.
    exists. Produce an individual SHA-256 file alongside each archive.
 5. Check archive contents, install into a temporary prefix, and launch the
    installed executable with `--version` and `--help` on its native runner.
-   Launch that installed executable in a PTY, type a character, quit with Ctrl+C,
-   and verify restored terminal settings.
+   Launch that installed executable in a PTY, complete/save a code test, quit,
+   remove/reinstall the executable, and reopen retained History/Progress.
+   Verify restored terminal settings on both exits. Python's stdlib SQLite
+   module observes only the owned test database; the installed app invokes no
+   external database program or Rust toolchain.
 6. Manual runs upload Actions artifacts only. A tag matching the Cargo version
    creates a **draft** GitHub release after all four jobs pass. A person reviews
    and publishes it later. Existing releases are not overwritten automatically.
 
 Linux packages use static musl targets to avoid requiring a particular glibc
-version. macOS builds target macOS 11 or newer, consistent with Rust target
+version; CI checks that they have neither shared-library NEEDED entries nor a
+dynamic interpreter. The native SQLite C build explicitly uses musl-gcc for those
+targets. macOS builds target macOS 11 or newer, consistent with Rust target
 support; actual minimum-version testing is still required. The installer checks
 OS/CPU, but cannot prove kernel/macOS version compatibility. macOS packages are
 currently unsigned and not notarized. No Windows package is planned for v1.
+
+SQLite is bundled through rusqlite/libsqlite3-sys. Package notices include the
+Rust dependency licenses and a provenance note for SQLite's public-domain library.
+Exercises are compiled into the binary. No external corpus/database installation
+is required. History lives outside the prefix; normal uninstall preserves it.
+Explicit `history purge` needs confirmation and exclusive lifecycle access.
 
 Workflow actions are pinned to verified release commits. The build jobs have
 read-only repository permissions; only the draft creation job has contents write.

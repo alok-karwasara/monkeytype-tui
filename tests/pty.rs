@@ -55,6 +55,8 @@ mod unix {
             command.env("LANG", "C.UTF-8");
             command.env("SHELL", "/bin/sh");
             command.env("PATH", "/usr/bin:/bin");
+            command.env("HOME", &directory);
+            command.env("XDG_STATE_HOME", directory.join("state"));
             command.args(args);
             command.cwd(&directory);
             let mut reader = pair.master.try_clone_reader()?;
@@ -226,12 +228,327 @@ mod unix {
             if matches!(self.child.try_wait(), Ok(None)) && self.child.kill().is_ok() {
                 let _ = self.child.wait();
             }
-            let _ = fs::remove_dir(&self.directory);
+            let _ = fs::remove_dir_all(&self.directory);
+        }
+    }
+
+    struct HistoryDirectory(PathBuf);
+    impl HistoryDirectory {
+        fn new() -> TestResult<Self> {
+            let p = PathBuf::from(format!(
+                "/tmp/monkeytype-history-e2e-{}",
+                std::process::id()
+            ));
+            fs::create_dir(&p)?;
+            Ok(Self(p))
+        }
+    }
+    impl Drop for HistoryDirectory {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
         }
     }
 
     fn run_case(case: &str) -> TestResult {
         match case {
+            "H2E01" => {
+                let d = HistoryDirectory::new()?;
+                let state = d.0.join("state");
+                let path = state.to_str().ok_or("test path")?;
+                {
+                    let mut h = Harness::new(FIXTURE, &["short", "30", "history", path])?;
+                    h.ready()?;
+                    h.send(b"abc")?;
+                    h.complete()?;
+                    h.wait("saved", |h| h.screen().contains("Saved locally"))?;
+                    h.send(b"\x1bOS")?;
+                    h.wait("history", |h| {
+                        h.screen().contains("HISTORY") && h.screen().contains("Completed: 1")
+                    })?;
+                    h.send(b"\x1bOS")?;
+                    h.wait("progress", |h| h.screen().contains("PROGRESS"))?;
+                    h.send(b"\x1b")?;
+                    h.complete()?;
+                    h.quit()?;
+                }
+                {
+                    let mut h = Harness::new(
+                        BINARY,
+                        &["--mode", "code", "--duration", "30", "--history-dir", path],
+                    )?;
+                    h.ready()?;
+                    h.send(b"\x1bOS")?;
+                    h.wait("retained history", |h| h.screen().contains("Completed: 1"))?;
+                    h.quit()?;
+                }
+            }
+            "H2E02" => {
+                let d = HistoryDirectory::new()?;
+                let state = d.0.join("must-not-exist");
+                let path = state.to_str().ok_or("test path")?;
+                let mut h = Harness::new(BINARY, &["--no-history", "--history-dir", path])?;
+                h.ready()?;
+                h.send(b"\x1bOS")?;
+                h.wait("disabled", |h| h.screen().contains("History disabled"))?;
+                h.quit()?;
+                assert!(!state.exists());
+            }
+            "H2E03" => {
+                let d = HistoryDirectory::new()?;
+                let state = d.0.join("state");
+                let path = state.to_str().ok_or("test path")?;
+                {
+                    let mut h = Harness::new(FIXTURE, &["short", "30", "history", path])?;
+                    h.ready()?;
+                    h.send(b"a\x1b")?;
+                    h.wait("abandon prompt", |h| h.screen().contains("CONFIRM ABANDON"))?;
+                    h.send(b"y")?;
+                    h.ready()?;
+                    h.quit()?;
+                }
+                let store = monkeytype_tui::history::Store::open(&state)?;
+                assert_eq!(
+                    store
+                        .stats(&monkeytype_tui::history::Filter::default(), 0)?
+                        .count,
+                    0
+                );
+            }
+            "H2E04" => {
+                let d = HistoryDirectory::new()?;
+                let blocked = d.0.join("blocked");
+                fs::write(&blocked, b"keep")?;
+                let mut h = Harness::new(
+                    FIXTURE,
+                    &[
+                        "short",
+                        "30",
+                        "history",
+                        blocked.to_str().ok_or("test path")?,
+                    ],
+                )?;
+                h.ready()?;
+                h.send(b"abc")?;
+                h.complete()?;
+                h.wait("unsaved", |h| h.screen().contains("Unsaved"))?;
+                h.quit()?;
+                assert_eq!(fs::read(blocked)?, b"keep");
+            }
+            "H2E05" => {
+                let d = HistoryDirectory::new()?;
+                let state = d.0.join("state");
+                let path = state.to_str().ok_or("test path")?;
+                let mut h = Harness::new(FIXTURE, &["short", "30", "history", path])?;
+                h.ready()?;
+                h.send(b"abc")?;
+                h.complete()?;
+                h.send(b"\x1bOS")?;
+                h.wait("one record", |h| h.screen().contains("Completed: 1"))?;
+                h.send(b"\x1b[19~")?;
+                h.wait("clear confirm", |h| h.screen().contains("CLEAR HISTORY"))?;
+                h.send(b"\r")?;
+                h.wait("cancel preserves", |h| {
+                    !h.screen().contains("CLEAR HISTORY") && h.screen().contains("Completed: 1")
+                })?;
+                h.send(b"\x1b[19~")?;
+                h.wait("clear confirm", |h| h.screen().contains("CLEAR HISTORY"))?;
+                h.send(b"y")?;
+                h.wait("cleared", |h| h.screen().contains("Completed: 0"))?;
+                h.quit()?;
+            }
+            "H2E06" => {
+                let d = HistoryDirectory::new()?;
+                let state = d.0.join("state");
+                let path = state.to_str().ok_or("test path")?;
+                let mut h = Harness::new(FIXTURE, &["short", "30", "history", path])?;
+                h.ready()?;
+                let run_purge = |answer: &[u8]| -> TestResult<std::process::Output> {
+                    let mut child = Command::new(BINARY)
+                        .env_clear()
+                        .env("PATH", "/usr/bin:/bin")
+                        .args(["history", "purge", "--history-dir", path])
+                        .stdin(std::process::Stdio::piped())
+                        .stdout(std::process::Stdio::piped())
+                        .stderr(std::process::Stdio::piped())
+                        .spawn()?;
+                    child.stdin.take().ok_or("stdin")?.write_all(answer)?;
+                    Ok(child.wait_with_output()?)
+                };
+                assert!(!run_purge(b"PURGE\n")?.status.success());
+                h.quit()?;
+                drop(h);
+                assert!(run_purge(b"no\n")?.status.success());
+                assert!(state.join("history.sqlite3").exists());
+                fs::write(state.join("unrelated"), b"keep")?;
+                assert!(run_purge(b"PURGE\n")?.status.success());
+                assert!(!state.join("history.sqlite3").exists());
+                assert_eq!(fs::read(state.join("unrelated"))?, b"keep");
+            }
+            "H2E07" => {
+                let d = HistoryDirectory::new()?;
+                let state = d.0.join("state");
+                let path = state.to_str().ok_or("test path")?;
+                let mut ids = std::collections::HashSet::new();
+                for _ in 0..4 {
+                    let mut h = Harness::new(BINARY, &["--mode", "code", "--history-dir", path])?;
+                    h.ready()?;
+                    let screen = h.screen();
+                    let id = screen
+                        .lines()
+                        .find(|s| s.contains("Exercise:"))
+                        .ok_or("exercise identity missing")?;
+                    assert!(ids.insert(id.to_owned()));
+                    h.quit()?;
+                }
+                let db = rusqlite::Connection::open(state.join("history.sqlite3"))?;
+                assert_eq!(
+                    db.query_row("SELECT count(*) FROM content_selection", [], |r| r
+                        .get::<_, usize>(0))?,
+                    56
+                );
+            }
+            "H2E08" => {
+                let d = HistoryDirectory::new()?;
+                let state = d.0.join("state");
+                let path = state.to_str().ok_or("test path")?;
+                let mut h = Harness::new(FIXTURE, &["short", "30", "history", path])?;
+                h.ready()?;
+                let lock = rusqlite::Connection::open(state.join("history.sqlite3"))?;
+                lock.execute_batch("BEGIN IMMEDIATE")?;
+                h.send(b"abc")?;
+                h.complete()?;
+                h.wait("unsaved", |h| h.screen().contains("Unsaved"))?;
+                lock.execute_batch("ROLLBACK")?;
+                h.send(b"r")?;
+                h.wait("retry saved", |h| h.screen().contains("Saved locally"))?;
+                h.send(b"\x1bOS")?;
+                h.wait("only one result", |h| h.screen().contains("Completed: 1"))?;
+                h.quit()?;
+            }
+            "H2E09" => {
+                let d = HistoryDirectory::new()?;
+                let state = d.0.join("state");
+                let path = state.to_str().ok_or("test path")?;
+                {
+                    let mut h = Harness::new(FIXTURE, &["short", "30", "history", path])?;
+                    h.ready()?;
+                    h.send(b"abc")?;
+                    h.complete()?;
+                    h.wait("saved", |h| h.screen().contains("Saved locally"))?;
+                    h.quit()?;
+                }
+                let installed = d.0.join("monkeytype-tui");
+                fs::copy(BINARY, &installed)?;
+                fs::remove_file(&installed)?;
+                assert!(state.join("history.sqlite3").is_file());
+                fs::copy(BINARY, &installed)?;
+                let mut h = Harness::new(
+                    installed.to_str().ok_or("binary path")?,
+                    &["--mode", "code", "--duration", "30", "--history-dir", path],
+                )?;
+                h.ready()?;
+                h.send(b"\x1bOS")?;
+                h.wait("reinstalled history", |h| {
+                    h.screen().contains("Completed: 1")
+                })?;
+                h.quit()?;
+            }
+            "H2E10" => {
+                let d = HistoryDirectory::new()?;
+                let state = d.0.join("state");
+                let path = state.to_str().ok_or("test path")?;
+                {
+                    let _ = monkeytype_tui::history::Store::open(&state)?;
+                }
+                let db = state.join("history.sqlite3");
+                {
+                    let c = rusqlite::Connection::open(&db)?;
+                    c.pragma_update(None, "user_version", 999)?;
+                }
+                {
+                    let mut h = Harness::new(BINARY, &["--history-dir", path])?;
+                    h.ready()?;
+                    h.send(b"\x1bOS")?;
+                    h.wait("future schema", |h| {
+                        h.screen().contains("History unavailable")
+                    })?;
+                    h.resize(30, 10)?;
+                    h.wait("tiny history", |h| h.screen().contains("Resize"))?;
+                    h.resize(100, 30)?;
+                    h.quit()?;
+                }
+                assert_eq!(
+                    rusqlite::Connection::open(&db)?.pragma_query_value(
+                        None,
+                        "user_version",
+                        |r| r.get::<_, i64>(0)
+                    )?,
+                    999
+                );
+                let cancelled = Command::new(BINARY)
+                    .env_clear()
+                    .env("PATH", "/usr/bin:/bin")
+                    .args(["history", "purge", "--history-dir", path])
+                    .stdin(std::process::Stdio::null())
+                    .output()?;
+                assert!(cancelled.status.success());
+                assert!(String::from_utf8_lossy(&cancelled.stdout).contains("Cancelled"));
+                fs::write(&db, b"corrupt fixture database")?;
+                {
+                    let mut h = Harness::new(BINARY, &["--history-dir", path])?;
+                    h.ready()?;
+                    h.send(b"\x1bOS")?;
+                    h.wait("corruption notice", |h| {
+                        h.screen().contains("History unavailable")
+                    })?;
+                    h.quit()?;
+                }
+                assert_eq!(fs::read(&db)?, b"corrupt fixture database");
+            }
+            "H2E11" => {
+                use monkeytype_tui::history::{Counts, Record, Store, now_ms};
+                let d = HistoryDirectory::new()?;
+                let state = d.0.join("state");
+                let path = state.to_str().ok_or("test path")?;
+                {
+                    let mut s = Store::open(&state)?;
+                    for i in 0..123 {
+                        s.save(&Record::new(
+                            uuid::Uuid::new_v4().to_string(),
+                            now_ms() - i * 1000,
+                            monkeytype_tui::engine::Mode::Words,
+                            60,
+                            60_000_000_000,
+                            Counts {
+                                attempts: 100,
+                                correct_attempts: 90,
+                                current_correct: 80,
+                                backspaces: 10,
+                                uncorrected: 10,
+                            },
+                        ))?;
+                    }
+                }
+                let mut h = Harness::new(BINARY, &["--history-dir", path])?;
+                h.ready()?;
+                h.send(b"\x1bOS")?;
+                h.wait("large history", |h| h.screen().contains("Completed: 123"))?;
+                h.send(b"\x1b[C\x1b[B")?;
+                h.send(b"\x1bOS")?;
+                h.wait("speed trend", |h| {
+                    h.screen().contains("WPM / recent sessions")
+                })?;
+                h.send(b"\x1b[18~")?;
+                h.wait("accuracy trend", |h| h.screen().contains("Accuracy (%)"))?;
+                h.send(b"\x1b[18~")?;
+                h.wait("activity graph", |h| {
+                    h.screen().contains("Practice minutes")
+                })?;
+                h.resize(40, 12)?;
+                h.send(b"\x1b[15~")?;
+                h.resize(100, 30)?;
+                h.quit()?;
+            }
             "E2E01" => {
                 let mut h = Harness::new(BINARY, &[])?;
                 h.ready()?;
@@ -467,7 +784,8 @@ mod unix {
         } else {
             vec![
                 "E2E01", "E2E02", "E2E03", "E2E04", "E2E05", "E2E07", "E2E08", "E2E09", "E2E10",
-                "E2E11", "E2E12", "E2E13", "E2E14",
+                "E2E11", "E2E12", "E2E13", "E2E14", "H2E01", "H2E02", "H2E03", "H2E04", "H2E05",
+                "H2E06", "H2E07", "H2E08", "H2E09", "H2E10", "H2E11",
             ]
         };
         for case in cases {

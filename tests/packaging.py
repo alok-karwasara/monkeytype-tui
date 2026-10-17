@@ -8,6 +8,7 @@ from pathlib import Path
 import platform
 import pty
 import select
+import sqlite3
 import struct
 import subprocess
 import sys
@@ -107,13 +108,14 @@ class InstallerTests(unittest.TestCase):
             packager.build_package(Path("unused"), host_target(), {}, self.base / "out", "v999.0.0")
 
 
-def interactive_smoke(binary, isolated):
+def interactive_smoke(binary, isolated, retained=False):
     master, slave = pty.openpty()
     child = None
     try:
         baseline = termios.tcgetattr(slave)
         fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 30, 100, 0, 0))
-        child = subprocess.Popen([str(binary)], stdin=slave, stdout=slave, stderr=slave,
+        state=Path(isolated["HOME"]) / "history-state"
+        child = subprocess.Popen([str(binary), "--mode", "code", "--duration", "30", "--history-dir", str(state)], stdin=slave, stdout=slave, stderr=slave,
                                  env={**isolated, "TERM": "xterm-256color", "LANG": "C.UTF-8"},
                                  start_new_session=True)
         output = bytearray()
@@ -129,8 +131,30 @@ def interactive_smoke(binary, isolated):
                     raise RuntimeError("installed app exited before expected screen")
 
         wait_for(b"READY")
-        os.write(master, b"a")
-        wait_for(b"TYPING")
+        if retained:
+            os.write(master, b"\x1bOS")
+            wait_for(b"HISTORY")
+            os.write(master, b"\x1bOS")
+            wait_for(b"PROGRESS")
+        else:
+            os.write(master, b"a")
+            wait_for(b"TYPING")
+            # Deliberate errors still complete a snippet. The corpus test bounds
+            # every bundled exercise to <=512 scored positions.
+            os.write(master, b"x" * 600)
+            deadline=time.monotonic()+8
+            while True:
+                try:
+                    with sqlite3.connect(f"file:{state / 'history.sqlite3'}?mode=ro", uri=True, timeout=0.1) as db:
+                        count=db.execute("SELECT count(*) FROM sessions").fetchone()[0]
+                    if count==1:
+                        break
+                except sqlite3.OperationalError:
+                    pass
+                if time.monotonic()>=deadline:
+                    raise TimeoutError("installed executable did not persist a completed test")
+                if select.select([master], [], [], 0.05)[0]:
+                    output.extend(os.read(master,65536))
         os.write(master, b"\x03")
         if child.wait(timeout=5) != 0:
             raise RuntimeError("installed app did not quit successfully")
@@ -177,7 +201,12 @@ def smoke_archive(archive):  # PKG07
             if "monkeytype-tui" not in result.stdout:
                 raise ValueError("installed executable smoke test failed")
         interactive_smoke(prefix / "bin/monkeytype-tui", isolated)
-    print("PKG07: checksum, contents, install, CLI, PTY typing/quit and terminal restoration passed")
+        # Remove/reinstall the executable while keeping the independent state.
+        (prefix / "bin/monkeytype-tui").unlink()
+        subprocess.run(["/bin/sh", str(package / "install.sh"), "--prefix", str(prefix)],
+                       env=isolated, check=True, capture_output=True)
+        interactive_smoke(prefix / "bin/monkeytype-tui", isolated, retained=True)
+    print("PKG07/H2E09: checksum, install/reinstall, CLI, typing, saved history/dashboard and terminal restoration passed")
 
 
 if __name__ == "__main__":

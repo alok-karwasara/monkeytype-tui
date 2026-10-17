@@ -56,6 +56,11 @@ def notices(metadata):
             if not resolved.is_relative_to(directory):
                 raise ValueError("license path escapes the registry package")
             parts.append(f"\n--- {path.name} ---\n{resolved.read_text()}\n")
+    if any(packages[k]["name"] == "libsqlite3-sys" for k in selected):
+        parts.append("\nBundled native component: SQLite\n"
+                     "SQLite's deliverable library is dedicated to the public domain by its authors.\n"
+                     "Provenance and dedication: https://sqlite.org/copyright.html\n"
+                     "The Rust bindings' own license texts are included above.\n")
     return "".join(parts).encode()
 
 
