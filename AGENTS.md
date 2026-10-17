@@ -83,6 +83,36 @@ and reliable terminal cleanup.
 - Keep the app offline by default. Do not collect typed text, telemetry, or
   credentials. Persist aggregate results only when explicitly part of a feature.
 
+## Distribution
+
+- Ship compiled GitHub Release archives, not source-only installation. End users
+  need no Rust toolchain. Target Linux x86_64/ARM64 static musl and macOS
+  Intel/Apple silicon; local GNU packaging does not verify those other targets.
+- Rust/Cargo and the linker are build-time tools on developer/CI machines. Cargo
+  produces a native executable with the Rust library code linked in; installation
+  only copies that executable and documents, and running it invokes no compiler,
+  Cargo, interpreter, or separately installed Rust runtime.
+- No Rust requirement does not mean no OS requirements: use an archive matching
+  OS/CPU and a supported terminal/OS version. Keep Linux static-musl packaging
+  distinct from GNU builds and macOS system-library dependencies; do not claim
+  that one executable runs on every platform or that static linkage was verified
+  merely because a musl target was selected.
+- `.github/workflows/release.yml` tests/packages on native runners. Matching
+  version tags create drafts only; manual runs produce Actions artifacts.
+  Publishing, pushing, tagging, and choosing a project license are separate steps.
+- Package only the production binary without optional features, offline
+  `packaging/install.sh`, README, target marker, and dependency notices/license.
+  Never ship fixture-app, test-support, raw Cargo metadata, or arbitrary tree files.
+- The installer defaults to ~/.local/bin and installs notices under ~/.local/share.
+  No sudo, downloads, or shell configuration inspection/editing. Existing binaries
+  require --force; symbolic links are never replaced. Explain PATH setup explicitly.
+- Run `python3 tests/packaging.py` and its `--archive PATH` smoke check for package
+  changes. See `packaging/RELEASING.md`; project license, dependency advisory/license
+  review, and full platform verification remain prerequisites for public release.
+- Current local packaging evidence: PKG01–06 pass, and a GNU Linux x86_64 archive
+  passes PKG07 including installed-binary typing/quit and terminal restoration.
+  The GitHub workflow and musl/macOS/ARM64 builds have not run here.
+
 ## Stack and dependency policy
 
 - Use stable Rust, edition 2024, with Ratatui and its compatible Crossterm backend.

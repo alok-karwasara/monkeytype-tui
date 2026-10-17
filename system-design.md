@@ -731,3 +731,102 @@ needed to inherit default colors and font.
    validation, product review of provisional behavior, and a release dependency audit.
 7. Keep history as a documented TODO; update this design and `AGENTS.md` as
    behavior becomes implemented or accepted requirements change.
+
+## 14. Application distribution
+
+The source repository is the development input. End users receive compiled
+GitHub Release archives and install `monkeytype-tui` into a directory on PATH;
+they do not need a Rust toolchain. Linux x86_64/ARM64 packages use static musl;
+macOS Intel/Apple silicon packages use their native Rust targets.
+
+### Why users do not need Rust installed
+
+Rust is a compiled language. On the developer machine or GitHub Actions runner,
+`cargo build --locked --release --no-default-features --bin monkeytype-tui
+--target TARGET` uses the pinned Rust compiler and platform linker to translate
+the application and its dependencies into native machine code. The resulting
+`target/TARGET/release/monkeytype-tui` is an executable the operating system can
+load directly. Rust library code, including the needed standard-library code,
+is linked into the executable in this build configuration. We do not enable
+dynamic Rust-library linking or require a separately installed Rust runtime.
+See the [Rust linkage reference](https://doc.rust-lang.org/reference/linkage.html).
+
+```mermaid
+flowchart LR
+    A[Rust source and locked dependencies] --> B[Rust compiler and linker on developer or CI machine]
+    B --> C[Native executable for one OS and CPU]
+    C --> D[Release archive]
+    D --> E[Installer copies executable into prefix/bin]
+    E --> F[Shell finds monkeytype-tui through PATH]
+    F --> G[Operating system runs machine code directly]
+```
+
+| Stage | Where it happens | Required tools |
+| --- | --- | --- |
+| Compile and package | Developer machine / CI | Pinned Rust/Cargo, target linker/SDK, Python packaging tools. |
+| Download and install | User machine | Matching archive, normal shell, extraction/checksum utilities; no compilation. |
+| Run | User machine | Compatible OS/CPU, required OS libraries, terminal; no Rust, Cargo, Python, or Git. |
+
+`packaging/install.sh` copies the prebuilt executable into `~/.local/bin` by
+default, makes it executable, and installs its documentation/notices. It does
+not call Cargo or build from source. When the user types `monkeytype-tui`, the
+shell searches PATH and starts that file. PATH controls where the shell finds
+the executable; it does not provide a language runtime or alter the executable.
+
+This is platform-specific distribution, not a universal executable. Linux musl
+targets are intended to link the C runtime statically to avoid a host glibc
+dependency; inspect the built artifacts to confirm linkage before release.
+The local GNU Linux preview instead uses host-compatible system libraries.
+Inspection with `file` and `readelf -d` confirms that this preview is an x86_64
+ELF executable whose declared shared-library dependencies are `libc.so.6` and
+`libgcc_s.so.1`, with no dynamic Rust-library dependency. This is evidence for
+the local preview, not for the other planned release targets.
+macOS executables can depend on libraries supplied by macOS. All variants still
+need a compatible OS/kernel version and terminal. Compiling from source remains
+an optional developer path that does require Rust.
+
+### Build, release, and installation flow
+
+```mermaid
+flowchart LR
+    V[Matching version tag] --> T[Native build and tests on four runners]
+    T --> P[Production binary + notices + offline installer]
+    P --> S[Checksum and temporary installation smoke check]
+    S --> D[Draft GitHub Release]
+    D --> R[Maintainer review and publish]
+    R --> U[User downloads matching archive]
+    U --> I[Install in prefix/bin]
+    I --> C[Run monkeytype-tui through PATH]
+```
+
+The implementation is `.github/workflows/release.yml`,
+`scripts/package-release.py`, and `packaging/install.sh`. The packager traverses
+target-filtered normal/build dependencies for public license notices, excludes
+dev-only dependencies, and archives an explicit asset list. Raw metadata and
+source files are not shipped. Only `--no-default-features --bin monkeytype-tui`
+release builds are packaged; fixture features stay in the verification build.
+
+The offline installer checks OS/CPU, supports an absolute installation prefix,
+installs docs/notices, and replaces a regular executable only with `--force`.
+The executable is staged beside its destination before rename. Shell profiles
+and environment files are never inspected or modified. An installer subprocess
+cannot change its parent shell's PATH; instructions explain the one-time setup.
+
+Alternatives: crates.io/Cargo installation requires the user to compile and is
+not the requested primary distribution. Homebrew and OS-native packages improve
+package-manager integration but require additional manifests and maintenance.
+Cargo-dist can generate several formats; a small explicit workflow and offline
+installer suffice for the initial four targets without profile modification.
+A remote installer could automate downloads later; it is not required to launch
+a downloaded executable through PATH. No updater service or runtime networking
+is introduced. See [release process](packaging/RELEASING.md) for the remaining
+license, advisory, signing, and platform checks; this setup is not a published
+release or evidence that unrun platforms pass.
+
+The installed-artifact check (`tests/packaging.py --archive PATH`) verifies the
+checksum and explicit asset list, installs into a temporary prefix, runs
+`--version`/`--help`, and drives the installed app through typing and quit in a
+PTY, checking restored terminal settings. It supplies an isolated environment
+whose PATH excludes this workspace's Rust toolchain. This verifies the installed
+executable's behavior without invoking build tools; it does not claim that Rust
+was uninstalled from the test host or that unrun platforms passed.

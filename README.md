@@ -4,7 +4,51 @@ Offline typing practice in your terminal. Switch between words and formatted
 code, with live time, WPM, accuracy, and error counts. The app uses your terminal's
 colors and font; no custom theme, font, shell plugin, or account is needed.
 
-## Run
+## Install a release (no Rust required)
+
+Release automation is prepared; no public release has been published yet.
+Once published, open this repository's **Releases** page and download the
+`.tar.gz` asset and its matching `.sha256` file. GitHub's **Source code** links
+are for building the project, not the packaged app.
+
+| Your computer | Target in the filename |
+| --- | --- |
+| Linux Intel/AMD 64-bit | `x86_64-unknown-linux-musl` |
+| Linux ARM 64-bit | `aarch64-unknown-linux-musl` |
+| macOS Intel | `x86_64-apple-darwin` |
+| macOS Apple silicon | `aarch64-apple-darwin` |
+
+For example, on Linux Intel/AMD (substitute the downloaded version):
+
+```sh
+sha256sum -c monkeytype-tui-0.1.0-x86_64-unknown-linux-musl.tar.gz.sha256
+tar -xzf monkeytype-tui-0.1.0-x86_64-unknown-linux-musl.tar.gz
+cd monkeytype-tui-0.1.0-x86_64-unknown-linux-musl
+sh install.sh
+monkeytype-tui
+```
+
+On macOS, verify the matching file with `shasum -a 256 -c FILE.tar.gz.sha256`,
+then extract and run its installer the same way. Checksums detect changed or
+damaged downloads; these packages are not currently signed or notarized.
+
+The installer copies the executable into `~/.local/bin`, plus notices and
+instructions into `~/.local/share/doc/monkeytype-tui`. It needs no administrator
+access, performs no downloads, and does not read or edit shell configuration.
+If your shell reports `command not found`, add the directory for that session:
+
+```sh
+export PATH="$HOME/.local/bin:$PATH"
+monkeytype-tui
+```
+
+For future shells, add that PATH setting using your shell's normal setup.
+Alternatively, choose an existing prefix with `sh install.sh --prefix /absolute/path`;
+the executable goes in its `bin` directory. Replace an existing installation
+with `sh install.sh --force`. To uninstall the default installation, remove
+`~/.local/bin/monkeytype-tui` and `~/.local/share/doc/monkeytype-tui`.
+
+## Build and run from source (developers)
 
 Install the pinned Rust toolchain through rustup and your platform's normal
 compiler/linker tools, then:
@@ -122,3 +166,8 @@ setup unless already cached; application usage is offline.
 Linux has automated validation in the current workspace. macOS remains a target
 that needs its own verification. Full Unicode exercises, persistent settings,
 and additional corpus controls are future work.
+
+## Preparing releases (maintainers)
+
+See [packaging/RELEASING.md](packaging/RELEASING.md) for package checks, the
+four-platform workflow, and the remaining checks before publishing a draft.
